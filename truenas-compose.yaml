@@ -1,0 +1,57 @@
+# TrueNAS SCALE Custom App configuration
+#
+# In the TrueNAS UI: Apps -> Discover Apps -> Custom App -> "Install via YAML"
+# (or Launch Docker Image, filling in the equivalent fields by hand if your
+# TrueNAS version doesn't offer raw YAML/compose import).
+#
+# Before deploying:
+#   1. Push this repo to GitHub.
+#   2. Confirm the GitHub Action has built and pushed the image --
+#      check the "Packages" section of your GitHub profile/repo for
+#      ghcr.io/<your-username>/<repo-name>:latest
+#   3. If the package is private, you'll need to create a registry
+#      credential in TrueNAS (Apps -> Settings -> Docker Registries)
+#      using a GitHub Personal Access Token with read:packages scope --
+#      or simplest, make the package public from its GitHub package settings.
+#   4. Replace YOUR_GITHUB_USERNAME/YOUR_REPO_NAME below with the real values.
+#   5. Confirm the SMB share path TrueNAS uses internally for
+#      \\The_Hord\Work\AI testing\Audio\CharacterExtractor\output --
+#      this is usually something like /mnt/The_Hord/Work/AI testing/Audio/CharacterExtractor/output
+#      from the TrueNAS host's perspective. Adjust the hostPath below to match.
+
+services:
+  voice-metadata-builder:
+    image: ghcr.io/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME:latest
+    container_name: voice-metadata-builder
+    restart: unless-stopped
+
+    ports:
+      - "5010:5000"   # change host port (left side) if 5010 is taken
+
+    environment:
+      DATA_ROOT: /data
+      WHISPER_URL: http://192.168.1.2:8014
+      WHISPER_MODEL: Systran/faster-whisper-large-v3
+      TRAINING_OUTPUT_ROOT: /training_output
+
+    volumes:
+      # Your CharacterExtractor output folder (character folders live directly under here)
+      - type: bind
+        source: /mnt/The_Hord/Work/AI testing/Audio/CharacterExtractor/output
+        target: /data
+
+      # Where trained checkpoints + cached base XTTS files get written.
+      # Keep this persistent so you don't re-download the ~2GB base model
+      # every time you train a new character.
+      - type: bind
+        source: /mnt/The_Hord/Work/AI testing/Audio/CharacterExtractor/training_output
+        target: /training_output
+
+    # GPU access for the training step (same pattern as your other AI apps)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Voice Metadata Builder</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1d2027;
+    --panel-alt: #262a33;
+    --border: #333844;
+    --text: #e4e6eb;
+    --text-dim: #8a8f9c;
+    --accent: #5b8cff;
+    --good: #4caf7d;
+    --bad: #e0616b;
+    --warn: #d9a441;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+  }
+  #whisper-status {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .dot.ok { background: var(--good); }
+  .dot.bad { background: var(--bad); }
+
+  #layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    height: calc(100vh - 57px);
+  }
+  #sidebar {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 12px;
+  }
+  .char-card {
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .char-card:hover { background: var(--panel-alt); }
+  .char-card.active {
+    background: var(--panel-alt);
+    border-color: var(--accent);
+  }
+  .char-name { font-weight: 600; margin-bottom: 4px; }
+  .char-meta { font-size: 12px; color: var(--text-dim); }
+  .progress-bar {
+    height: 4px;
+    background: var(--panel-alt);
+    border-radius: 2px;
+    margin-top: 6px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--good);
+  }
+
+  #main {
+    padding: 24px;
+    overflow-y: auto;
+  }
+  .empty-state {
+    color: var(--text-dim);
+    margin-top: 60px;
+    text-align: center;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .panel h2 {
+    font-size: 15px;
+    margin: 0 0 14px 0;
+  }
+  .row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  label {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  input[type="number"] {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 8px;
+    width: 80px;
+  }
+  input[type="checkbox"] { margin-right: 6px; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled {
+    background: var(--panel-alt);
+    color: var(--text-dim);
+    cursor: not-allowed;
+  }
+  button.secondary {
+    background: var(--panel-alt);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  #log {
+    background: #0d0f12;
+    border-radius: 8px;
+    padding: 12px;
+    height: 240px;
+    overflow-y: auto;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .log-ok { color: var(--good); }
+  .log-fail { color: var(--bad); }
+  .log-drop { color: var(--warn); }
+  .log-dedupe { color: var(--text-dim); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--text-dim); font-weight: 600; font-size: 12px; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge.split { background: rgba(76,175,125,0.15); color: var(--good); }
+  .badge.nosplit { background: rgba(217,164,65,0.15); color: var(--warn); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Voice Metadata Builder</h1>
+  <div id="whisper-status"><span class="dot"></span><span id="whisper-text">Checking Whisper…</span></div>
+</header>
+
+<div id="layout">
+  <div id="sidebar"></div>
+  <div id="main">
+    <div class="empty-state" id="empty-state">Select a character on the left to get started.</div>
+    <div id="detail" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+let characters = [];
+let selectedChar = null;
+let activeJobId = null;
+let pollTimer = null;
+
+async function loadCharacters() {
+  const res = await fetch('/api/characters');
+  const data = await res.json();
+  characters = data.characters || [];
+  renderSidebar();
+  if (data.error) {
+    document.getElementById('sidebar').innerHTML = `<div style="color:var(--bad); padding:12px; font-size:13px;">${data.error}</div>`;
+  }
+}
+
+function renderSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.innerHTML = '';
+  characters.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'char-card' + (selectedChar === c.name ? ' active' : '');
+    const pct = c.total_clips ? Math.round((c.transcribed / c.total_clips) * 100) : 0;
+    card.innerHTML = `
+      <div class="char-name">${c.name}</div>
+      <div class="char-meta">${c.transcribed}/${c.total_clips} transcribed
+        ${c.has_split ? '<span class="badge split">split ready</span>' : ''}
+      </div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+    `;
+    card.onclick = () => selectCharacter(c.name);
+    sidebar.appendChild(card);
+  });
+}
+
+function selectCharacter(name) {
+  selectedChar = name;
+  renderSidebar();
+  renderDetail();
+}
+
+function renderDetail() {
+  document.getElementById('empty-state').style.display = 'none';
+  const detail = document.getElementById('detail');
+  detail.style.display = 'block';
+  const c = characters.find(c => c.name === selectedChar);
+
+  detail.innerHTML = `
+    <div class="panel">
+      <h2>${c.name}</h2>
+      <div class="char-meta">${c.total_clips} clips total &middot; ${c.transcribed} transcribed &middot; ${c.missing_wav} missing wav file
+        ${c.has_trained_model ? '<span class="badge split">model trained</span>' : ''}
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Step 1 &middot; Transcribe</h2>
+      <div class="row">
+        <label>Min duration (s)<input type="number" id="min-dur" value="1.0" step="0.5"></label>
+        <label>Max duration (s)<input type="number" id="max-dur" value="15.0" step="0.5"></label>
+        <label><input type="checkbox" id="force-retranscribe"> Re-transcribe existing</label>
+      </div>
+      <button id="btn-transcribe">Run transcription</button>
+    </div>
+
+    <div class="panel">
+      <h2>Step 2 &middot; Dedupe &amp; split</h2>
+      <div class="row">
+        <label>Dedupe similarity<input type="number" id="dedupe-th" value="0.92" step="0.01" min="0" max="1"></label>
+        <label>Eval fraction<input type="number" id="eval-frac" value="0.08" step="0.01" min="0" max="1"></label>
+      </div>
+      <button id="btn-split" class="secondary">Build train/eval split</button>
+    </div>
+
+    <div class="panel">
+      <h2>Step 3 &middot; Train</h2>
+      <div class="char-meta" style="margin-bottom:10px;">
+        Runs XTTS fine-tuning on the GPU. This can take a long time (hours) depending on
+        dataset size and epoch count &mdash; the log below streams live progress.
+      </div>
+      <div class="row">
+        <label>Epochs<input type="number" id="num-epochs" value="10" step="1" min="1"></label>
+        <label>Batch size<input type="number" id="batch-size" value="4" step="1" min="1"></label>
+        <label>Grad accum steps<input type="number" id="grad-accum" value="16" step="1" min="1"></label>
+        <label>Language<input type="text" id="language" value="en" style="width:60px;"></label>
+      </div>
+      <button id="btn-train" class="secondary">Start training</button>
+    </div>
+
+    <div class="panel">
+      <h2>Log</h2>
+      <div id="log"></div>
+    </div>
+
+    <div class="panel" id="results-panel" style="display:none;">
+      <h2>Results</h2>
+      <div id="results"></div>
+    </div>
+  `;
+
+  document.getElementById('btn-transcribe').onclick = startTranscribe;
+  document.getElementById('btn-split').onclick = startSplit;
+  document.getElementById('btn-train').onclick = startTrain;
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('results-panel').style.display = 'none';
+}
+
+async function startTranscribe() {
+  const btn = document.getElementById('btn-transcribe');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  document.getElementById('log').innerHTML = '';
+
+  const body = {
+    character: selectedChar,
+    force: document.getElementById('force-retranscribe').checked,
+    min_duration: parseFloat(document.getElementById('min-dur').value),
+    max_duration: parseFloat(document.getElementById('max-dur').value),
+  };
+  const res = await fetch('/api/transcribe', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const data = await res.json();
+  activeJobId = data.job_id;
+  pollJob();
+}
+
+async function startSplit() {
+  const btn = document.getElementById('btn-split');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  document.getElementById('log').innerHTML = '';
+
+  const body = {
+    character: selectedChar,
+    dedupe_threshold: parseFloat(document.getElementById('dedupe-th').value),
+    eval_fraction: parseFloat(document.getElementById('eval-frac').value),
+  };
+  const res = await fetch('/api/split', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const data = await res.json();
+  activeJobId = data.job_id;
+  pollJob();
+}
+
+async function startTrain() {
+  const btn = document.getElementById('btn-train');
+  btn.disabled = true;
+  btn.textContent = 'Training…';
+  document.getElementById('log').innerHTML = '';
+
+  const body = {
+    character: selectedChar,
+    num_epochs: parseInt(document.getElementById('num-epochs').value, 10),
+    batch_size: parseInt(document.getElementById('batch-size').value, 10),
+    grad_accum_steps: parseInt(document.getElementById('grad-accum').value, 10),
+    language: document.getElementById('language').value,
+  };
+  const res = await fetch('/api/train', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const data = await res.json();
+  activeJobId = data.job_id;
+  pollJob();
+}
+
+function classifyLogLine(line) {
+  if (line.startsWith('[OK]')) return 'log-ok';
+  if (line.startsWith('[FAIL]') || line.startsWith('[ERROR]')) return 'log-fail';
+  if (line.startsWith('[DROP')) return 'log-drop';
+  if (line.startsWith('[DEDUPE')) return 'log-dedupe';
+  return '';
+}
+
+async function pollJob() {
+  if (pollTimer) clearTimeout(pollTimer);
+  const res = await fetch(`/api/job/${activeJobId}`);
+  const data = await res.json();
+
+  const logEl = document.getElementById('log');
+  logEl.innerHTML = data.log.map(l => `<div class="${classifyLogLine(l)}">${l}</div>`).join('');
+  logEl.scrollTop = logEl.scrollHeight;
+
+  if (data.status === 'running') {
+    pollTimer = setTimeout(pollJob, 800);
+  } else {
+    const btnT = document.getElementById('btn-transcribe');
+    const btnS = document.getElementById('btn-split');
+    const btnTr = document.getElementById('btn-train');
+    if (btnT) { btnT.disabled = false; btnT.textContent = 'Run transcription'; }
+    if (btnS) { btnS.disabled = false; btnS.textContent = 'Build train/eval split'; }
+    if (btnTr) { btnTr.disabled = false; btnTr.textContent = 'Start training'; }
+
+    if (data.type === 'transcribe' && data.results) {
+      showResultsTable(data.results);
+    } else if (data.type === 'split' && data.results) {
+      showSplitResults(data.results);
+    } else if (data.type === 'train' && data.results) {
+      showTrainResults(data.results);
+    }
+    loadCharacters();
+  }
+}
+
+function showResultsTable(rows) {
+  const panel = document.getElementById('results-panel');
+  panel.style.display = 'block';
+  const results = document.getElementById('results');
+  results.innerHTML = `
+    <table>
+      <thead><tr><th>File</th><th>Transcript</th></tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr><td>${r.wav_rel}</td><td>${r.text}</td></tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function showSplitResults(result) {
+  const panel = document.getElementById('results-panel');
+  panel.style.display = 'block';
+  document.getElementById('results').innerHTML = `
+    <div>Train: <strong>${result.train}</strong> clips &middot; Eval: <strong>${result.eval}</strong> clips</div>
+  `;
+}
+
+function showTrainResults(result) {
+  const panel = document.getElementById('results-panel');
+  panel.style.display = 'block';
+  document.getElementById('results').innerHTML = `
+    <div>Trained model saved to:</div>
+    <div style="font-family:monospace; margin-top:6px; color:var(--accent);">${result.final_model_dir}</div>
+    <div class="char-meta" style="margin-top:10px;">
+      Point xtts-api-server's model path at this folder (model.pth + config.json + vocab.json) to use the fine-tuned voice.
+    </div>
+  `;
+}
+
+async function checkWhisper() {
+  const res = await fetch('/api/whisper-check');
+  const data = await res.json();
+  const dot = document.querySelector('#whisper-status .dot');
+  const text = document.getElementById('whisper-text');
+  if (data.ok) {
+    dot.className = 'dot ok';
+    text.textContent = 'Whisper connected';
+  } else {
+    dot.className = 'dot bad';
+    text.textContent = 'Whisper unreachable';
+  }
+}
+
+loadCharacters();
+checkWhisper();
+</script>
+
+</body>
+</html>
