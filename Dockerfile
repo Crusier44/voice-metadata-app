@@ -1,16 +1,35 @@
-FROM ghcr.io/idiap/coqui-tts:latest
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
-# The base image ships Coqui TTS + PyTorch + CUDA already wired up for GPU use.
-# We add our Flask control-panel app on top of it, and swap the entrypoint
-# from the base image's `tts` CLI to our web app.
+ENV DEBIAN_FRONTEND=noninteractive
+ENV COQUI_TOS_AGREED=1
 
 WORKDIR /app
 
-# Skip the interactive CPML license prompt (XTTS v2 model license) on first load.
-ENV COQUI_TOS_AGREED=1
+# Ubuntu 22.04 ships Python 3.10 by default -- use that rather than
+# installing 3.11 separately, since python3-pip only pairs correctly with
+# whichever python3 is already the system default. Mixing versions here is
+# what caused "pip: command not found" (exit 127) previously.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv \
+        libsndfile1 ffmpeg git \
+    && rm -rf /var/lib/apt/lists/*
 
+# Confirm pip is actually on PATH before we rely on it below -- fails the
+# build immediately with a clear message instead of a mysterious exit 127
+# later if something about the base image ever changes.
+RUN python3 -m pip --version
+
+# PyTorch with CUDA 12.4 wheels, matching the base image's CUDA version.
+RUN python3 -m pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+# Coqui TTS (community-maintained fork, PyPI package name is coqui-tts)
+# plus its trainer package needed for the fine-tuning recipe.
+RUN python3 -m pip install --no-cache-dir coqui-tts coqui-tts-trainer
+
+# Our app's own lightweight dependencies (Flask, requests). soundfile is
+# already pulled in transitively by coqui-tts, but listing it is harmless.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 COPY train_template.py .
@@ -18,5 +37,4 @@ COPY templates/ templates/
 
 EXPOSE 5000
 
-ENTRYPOINT []
 CMD ["python3", "app.py"]
