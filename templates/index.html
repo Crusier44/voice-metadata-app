@@ -408,7 +408,7 @@ function showResultsTable(rows) {
     <table>
       <thead><tr><th>File</th><th>Transcript</th></tr></thead>
       <tbody>
-        ${rows.map(r => `<tr><td>${r.wav_rel}</td><td>${r.text}</td></tr>`).join('')}
+        ${rows.map(r => `<tr><td>${r.wav_id}</td><td>${r.text}</td></tr>`).join('')}
       </tbody>
     </table>
   `;
