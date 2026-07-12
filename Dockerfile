@@ -26,6 +26,13 @@ RUN python3 -m pip install --no-cache-dir torch torchaudio --index-url https://d
 # plus its trainer package needed for the fine-tuning recipe.
 RUN python3 -m pip install --no-cache-dir coqui-tts coqui-tts-trainer
 
+# coqui-tts is not yet compatible with transformers 5.x -- it imports
+# isin_mps_friendly from transformers.pytorch_utils, which was removed in
+# that release (confirmed: https://github.com/idiap/coqui-ai-TTS/issues/558).
+# coqui-tts's own dependency resolution pulls in a 5.x version regardless,
+# so we force it back down afterward.
+RUN python3 -m pip install --no-cache-dir "transformers>=4.57,<5"
+
 # Our app's own lightweight dependencies (Flask, requests). soundfile is
 # already pulled in transitively by coqui-tts, but listing it is harmless.
 COPY requirements.txt .
